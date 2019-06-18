@@ -5,8 +5,25 @@ import os
 import librosa
 import copy
 import signal
+from tqdm import tqdm
+import matplotlib
+import matplotlib.pyplot as plt
 from hyperparams import Hyperparams as hp
 from network import encoder, decoder1, decoder2, embed
+
+
+def plot_alignment(alignment, gs):
+    """Plots the alignment
+    alignments: A list of (numpy) matrix of shape (encoder_steps, decoder_steps)
+    gs : (int) global step
+    """
+    fig, ax = plt.subplots()
+    im = ax.imshow(alignment)
+
+    # cbar_ax = fig.add_axes([0.85, 0.15, 0.05, 0.7])
+    fig.colorbar(im)
+    plt.title('{} Steps'.format(gs))
+    plt.savefig('{}/alignment_{}k.png'.format(hp.logdir, gs // 1000), format='png')
 
 
 def make_dataset(path):
@@ -106,7 +123,12 @@ def load_spectrograms(fpath):
     num_paddings = hp.r - (t % hp.r) if t % hp.r != 0 else 0  # for reduction
     mel = np.pad(mel, [[0, num_paddings], [0, 0]], mode="constant")
     mag = np.pad(mag, [[0, num_paddings], [0, 0]], mode="constant")
-    return fname, mel.reshape((-1, 80 * 5)), mag
+    return fname, mel.reshape((-1, hp.n_mels * hp.r)), mag
+
+
+def learning_rate_decay(init_lr, global_step, warmup_steps=4000.):
+    step = tf.cast(global_step + 1, dtype=tf.float32)
+    return init_lr * warmup_steps ** 0.5 * tf.minimum(step * warmup_steps ** -1.5, step ** -0.5)
 
 
 def get_batch():
@@ -125,8 +147,8 @@ def get_batch():
 
         fname.set_shape(())
         text.set_shape((None,))
-        mel.set_shape((None, 80 * 5))
-        mag.set_shape((None, 2048 // 2 + 1))
+        mel.set_shape((None, hp.n_mels * hp.r))
+        mag.set_shape((None, hp.n_fft // 2 + 1))
 
         _, (texts, mels, mags, fnames) = tf.contrib.training.bucket_by_sequence_length(
             input_length=50,
@@ -171,6 +193,51 @@ class Graph:
 
         self.audio = tf.py_function(spectrogram2wav, [self.z_hat[0]], tf.float32)
 
+        if mode in ('train', 'eval'):
+            # Loss.
+            self.loss1 = tf.reduce_mean(tf.abs(self.y_hat - self.y))
+            self.loss2 = tf.reduce_mean(tf.abs(self.z_hat - self.z))
+            self.loss = self.loss1 + self.loss2
+
+            self.global_step = tf.Variable(0, name='global_step', trainable=False)
+            self.lr = learning_rate_decay(hp.lr, global_step=self.global_step)
+            self.optimizer = tf.train.AdamOptimizer(learning_rate=self.lr)
+
+            self.gvs = self.optimizer.compute_gradients(self.loss)
+            self.clipped = []
+            for grad, var in self.gvs:
+                grad = tf.clip_by_norm(grad, 5.)
+                self.clipped.append((grad, var))
+
+            self.training_op = self.optimizer.apply_gradients(self.clipped, global_step=self.global_step)
+
+            tf.summary.scalar('{}/loss1'.format(mode), self.loss1)
+            tf.summary.scalar('{}/loss'.format(mode), self.loss)
+            tf.summary.scalar('{}/lr'.format(mode), self.lr)
+
+            tf.summary.image('{}/mel_gt'.format(mode), tf.expand_dims(self.y, -1), max_outputs=1)
+            tf.summary.image('{}/mel_hat'.format(mode), tf.expand_dims(self.y_hat, -1), max_outputs=1)
+            tf.summary.image('{}/mag_gt'.format(mode), tf.expand_dims(self.z, -1), max_outputs=1)
+            tf.summary.image('{}/mag_hat'.format(mode), tf.expand_dims(self.z_hat, -1), max_outputs=1)
+
+            tf.summary.audio('{}/sample'.format(mode), tf.expand_dims(self.audio, 0), hp.sr)
+            self.merged = tf.summary.merge_all()
+
 
 if __name__ == '__main__':
     print('Training start.')
+    g = Graph()
+    sv = tf.train.Supervisor(logdir=hp.logdir, save_summaries_secs=60, save_model_secs=0)
+
+    with sv.managed_session() as sess:
+        while 1:
+            for _ in tqdm(range(g.num_batch), total=g.num_batch, ncols=70, leave=False, unit='b'):
+                _, gs = sess.run([g.training_op, g.global_step])
+
+                if gs % 1000 == 0:
+                    sv.saver.save(sess, hp.logdir + '/model_gs_{}k'.format(gs // 1000))
+
+                    al = sess.run(g.alignments)
+                    plot_alignment(al[0], gs)
+
+    print('Done')
