@@ -6,7 +6,6 @@ import librosa
 import copy
 import signal
 from tqdm import tqdm
-import matplotlib
 import matplotlib.pyplot as plt
 from hyperparams import Hyperparams as hp
 from network import encoder, decoder1, decoder2, embed

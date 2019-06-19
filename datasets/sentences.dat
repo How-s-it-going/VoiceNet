@@ -1,1 +1,2 @@
-test.wav|ここにセンテンスをかく。
+/datasets/test.wav|ここにセンテンスをかく。
+/datasets/test2.wav|セリフをここに打ち込んでく。
