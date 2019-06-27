@@ -4,7 +4,7 @@ from text_encoder import JapaneseTextEncoder
 import os
 import librosa
 import copy
-import signal
+from scipy import signal
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 from hyperparams import Hyperparams as hp
@@ -34,7 +34,7 @@ def make_dataset(path):
             corpus.append(text)
 
     print(corpus)
-    encoder = JapaneseTextEncoder(corpus, append_eos=True)
+    encoder = JapaneseTextEncoder(corpus, maxlen=50, padding=True, append_eos=True)
     encoder.build()
 
     text_lengths = [len(words) for words in encoder.dataset]
@@ -133,16 +133,15 @@ def learning_rate_decay(init_lr, global_step, warmup_steps=4000.):
 def get_batch():
     with tf.device('/cpu:0'):
         fpaths, text_lengths, dataset = make_dataset('datasets/sentences.dat')
-        max_len, min_len = max(text_lengths), min(text_lengths)
 
         num_batch = len(fpaths) // hp.batch_size
         fpaths = tf.convert_to_tensor(fpaths)
         text_lengths = tf.convert_to_tensor(text_lengths)
         dataset = tf.convert_to_tensor(dataset)
 
-        fpath, text = tf.train.slice_input_producer([fpaths, text_lengths, dataset], shuffle=True)
+        fpath, text_length, text = tf.train.slice_input_producer([fpaths, text_lengths, dataset], shuffle=True)
 
-        fname, mel, mag = tf.py_function(load_spectrograms, [fpath], [tf.string, tf.float32, tf.float32])
+        fname, mel, mag = tf.py_func(load_spectrograms, [fpath], [tf.string, tf.float32, tf.float32])
 
         fname.set_shape(())
         text.set_shape((None,))
@@ -150,10 +149,10 @@ def get_batch():
         mag.set_shape((None, hp.n_fft // 2 + 1))
 
         _, (texts, mels, mags, fnames) = tf.contrib.training.bucket_by_sequence_length(
-            input_length=50,
+            input_length=text_length,
             tensors=[text, mel, mag, fname],
             batch_size=hp.batch_size,
-            bucket_boundaries=[i for i in range(min_len + 1, max_len - 1, 20)],
+            bucket_boundaries=[50],
             num_threads=16,
             capacity=hp.batch_size * 4,
             dynamic_pad=True
@@ -190,7 +189,7 @@ class Graph:
                                                    is_training=is_training)
             self.z_hat = decoder2(self.y_hat, is_training=is_training)
 
-        self.audio = tf.py_function(spectrogram2wav, [self.z_hat[0]], tf.float32)
+        self.audio = tf.py_func(spectrogram2wav, [self.z_hat[0]], tf.float32)
 
         if mode in ('train', 'eval'):
             # Loss.

@@ -22,7 +22,7 @@ def bn(inputs,
        scope='bn',
        reuse=None):
     inputs_shape = inputs.get_shape()
-    inputs_rank = inputs_shape.shape.ndims
+    inputs_rank = inputs_shape.ndims
 
     if inputs_rank in [2, 3, 4]:
         if inputs_rank == 2:

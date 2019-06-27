@@ -1,6 +1,6 @@
 class Hyperparams:
     # signal processing.
-    vocab_size = 392126
+    vocab_size = 400000
     sr = 22050
     n_fft = 2048  # fft points (samples)
     frame_shift = 0.0125  # seconds
