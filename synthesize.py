@@ -15,7 +15,7 @@ def synthesize():
 
     _, _, encoder = make_corpus('datasets/sentences.dat')
     sent = input('文章を入力してね !')
-    text = [encoder.encode(sent)]
+    text = np.array([encoder.encode(sent)], dtype=np.int32)
 
     saver = tf.train.Saver()
     with tf.Session() as sess:
@@ -24,10 +24,10 @@ def synthesize():
 
         # Feed Forward
         ## mel
-        y_hat = np.zeros((1, 200, hp.n_mels * hp.r), np.float32)  # hp.n_mels*hp.r
+        y_hat = np.zeros((text.shape[0], 200, hp.n_mels * hp.r), np.float32)  # hp.n_mels*hp.r
         for j in tqdm(range(200)):
             _y_hat = sess.run(g.y_hat, {g.x: text, g.y: y_hat})
-            y_hat[:, j, :] = _y_hat
+            y_hat[:, j, :] = _y_hat[:, j, :]
         ## mag
         mags = sess.run(g.z_hat, {g.y_hat: y_hat})
         for i, mag in enumerate(mags):
