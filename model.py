@@ -25,7 +25,7 @@ def plot_alignment(alignment, gs):
     plt.savefig('{}/alignment_{}k.png'.format(hp.logdir, gs // 1000), format='png')
 
 
-def make_dataset(path):
+def make_corpus(path):
     corpus, fpaths = [], []
     with open(path, encoding='utf-8') as f:
         for line in f:
@@ -33,13 +33,12 @@ def make_dataset(path):
             fpaths.append(fname)
             corpus.append(text)
 
-    print(corpus)
     encoder = JapaneseTextEncoder(corpus, maxlen=50, padding=True, append_eos=True)
     encoder.build()
 
     text_lengths = [len(words) for words in encoder.dataset]
 
-    return fpaths, text_lengths, encoder.dataset
+    return fpaths, text_lengths, encoder
 
 
 def spectrogram2wav(mag):
@@ -132,12 +131,12 @@ def learning_rate_decay(init_lr, global_step, warmup_steps=4000.):
 
 def get_batch():
     with tf.device('/cpu:0'):
-        fpaths, text_lengths, dataset = make_dataset('datasets/sentences.dat')
+        fpaths, text_lengths, encoder = make_corpus('datasets/sentences.dat')
 
         num_batch = len(fpaths) // hp.batch_size
         fpaths = tf.convert_to_tensor(fpaths)
         text_lengths = tf.convert_to_tensor(text_lengths)
-        dataset = tf.convert_to_tensor(dataset)
+        dataset = tf.convert_to_tensor(encoder.dataset)
 
         fpath, text_length, text = tf.train.slice_input_producer([fpaths, text_lengths, dataset], shuffle=True)
 
