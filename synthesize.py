@@ -14,8 +14,9 @@ def synthesize():
     print("Graph loaded")
 
     _, _, encoder = make_corpus('datasets/sentences.dat')
-    sent = input('文章を入力してね !')
+    sent = input('Input a sentence.')
     text = np.array([encoder.encode(sent)], dtype=np.int32)
+    print(text)
 
     saver = tf.train.Saver()
     with tf.Session() as sess:

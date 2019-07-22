@@ -33,7 +33,7 @@ def make_corpus(path):
             fpaths.append(fname)
             corpus.append(text)
 
-    encoder = JapaneseTextEncoder(corpus, maxlen=50, padding=True, append_eos=True)
+    encoder = JapaneseTextEncoder(corpus, append_eos=True)
     encoder.build()
 
     text_lengths = [len(words) for words in encoder.dataset]
@@ -151,7 +151,7 @@ def get_batch():
             input_length=text_length,
             tensors=[text, mel, mag, fname],
             batch_size=hp.batch_size,
-            bucket_boundaries=[50],
+            bucket_boundaries=[8 * (i + 1) for i in range(8)],
             num_threads=16,
             capacity=hp.batch_size * 4,
             dynamic_pad=True
@@ -223,10 +223,13 @@ class Graph:
 
 if __name__ == '__main__':
     print('Training start.')
+    config = tf.ConfigProto()
+    config.allow_soft_placement = True
+    config.log_device_placement = True
     g = Graph()
     sv = tf.train.Supervisor(logdir=hp.logdir, save_summaries_secs=60, save_model_secs=0)
 
-    with sv.managed_session() as sess:
+    with sv.managed_session(config=config) as sess:
         while 1:
             for _ in tqdm(range(g.num_batch), total=g.num_batch, ncols=70, leave=False, unit='b'):
                 _, gs = sess.run([g.training_op, g.global_step])
@@ -236,5 +239,3 @@ if __name__ == '__main__':
 
                     al = sess.run(g.alignments)
                     plot_alignment(al[0], gs)
-
-    print('Done')
