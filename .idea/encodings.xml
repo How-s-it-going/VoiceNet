@@ -3,5 +3,7 @@
   <component name="Encoding">
     <file url="file://$PROJECT_DIR$/datasets/serif/lin01.txt" charset="Shift_JIS" />
     <file url="file://$PROJECT_DIR$/datasets/serif/lin01B.txt" charset="Shift_JIS" />
+    <file url="file://$PROJECT_DIR$/datasets/serif/lin04_selB_1.txt" charset="Shift_JIS" />
+    <file url="file://$PROJECT_DIR$/datasets/serif/lin06C.txt" charset="Shift_JIS" />
   </component>
 </project>

@@ -33,7 +33,7 @@ def make_corpus(path):
             fpaths.append(fname)
             corpus.append(text)
 
-    encoder = JapaneseTextEncoder(corpus, append_eos=True)
+    encoder = JapaneseTextEncoder(corpus, padding=True, maxlen=50, append_eos=True)
     encoder.build()
 
     text_lengths = [len(words) for words in encoder.dataset]
@@ -191,22 +191,26 @@ class Graph:
         self.audio = tf.py_func(spectrogram2wav, [self.z_hat[0]], tf.float32)
 
         if mode in ('train', 'eval'):
-            # Loss.
-            self.loss1 = tf.reduce_mean(tf.abs(self.y_hat - self.y))
-            self.loss2 = tf.reduce_mean(tf.abs(self.z_hat - self.z))
-            self.loss = self.loss1 + self.loss2
+            with tf.device('/gpu:0'):
+                # Loss.
+                self.loss1 = tf.reduce_mean(tf.abs(self.y_hat - self.y))
+                self.loss2 = tf.reduce_mean(tf.abs(self.z_hat - self.z))
+                self.loss = self.loss1 + self.loss2
 
-            self.global_step = tf.Variable(0, name='global_step', trainable=False)
-            self.lr = learning_rate_decay(hp.lr, global_step=self.global_step)
+            with tf.device('/cpu:0'):
+                self.global_step = tf.Variable(0, name='global_step', trainable=False)
+                self.lr = learning_rate_decay(hp.lr, global_step=self.global_step)
+
             self.optimizer = tf.train.AdamOptimizer(learning_rate=self.lr)
 
-            self.gvs = self.optimizer.compute_gradients(self.loss)
-            self.clipped = []
-            for grad, var in self.gvs:
-                grad = tf.clip_by_norm(grad, 5.)
-                self.clipped.append((grad, var))
+            with tf.device('/gpu:0'):
+                self.gvs = self.optimizer.compute_gradients(self.loss)
+                self.clipped = []
+                for grad, var in self.gvs:
+                    grad = tf.clip_by_norm(grad, 5.)
+                    self.clipped.append((grad, var))
 
-            self.training_op = self.optimizer.apply_gradients(self.clipped, global_step=self.global_step)
+                self.training_op = self.optimizer.apply_gradients(self.clipped, global_step=self.global_step)
 
             tf.summary.scalar('{}/loss1'.format(mode), self.loss1)
             tf.summary.scalar('{}/loss'.format(mode), self.loss)
