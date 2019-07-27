@@ -163,7 +163,7 @@ def get_batch():
 
 class Graph:
     def __init__(self, mode='train'):
-        with tf.device(tf.train.replica_device_setter(cluster=cluster_spec)):
+        with tf.device(tf.train.replica_device_setter(cluster=hp.cluster_spec)):
             is_training = True if mode == 'train' else False
 
             if mode == 'train':
@@ -233,35 +233,31 @@ if __name__ == '__main__':
                         default=0)
     args = parser.parse_args()
 
-    config = tf.ConfigProto()
-    config.allow_soft_placement = True
-    config.log_device_placement = True
-
-    cluster_spec = tf.train.ClusterSpec({
-        'ps': [
-            '192.168.1.12:2221'  # /job:ps/task:0
-        ],
-        'worker': [
-            '192.168.1.10:2222',  # /job:worker/task:0
-            '172.17.0.1:2222'  # /job:worker/task:1
-        ]
-    })
-
-    server = tf.train.Server(cluster_spec, job_name=args.job_name, task_index=args.task_index)
+    server = tf.train.Server(hp.cluster_spec, job_name=args.job_name, task_index=args.task_index)
 
     if args.job_name == 'ps':
         server.join()
     else:
         g = Graph()
-        sv = tf.train.Supervisor(logdir=hp.logdir, save_summaries_secs=60, save_model_secs=0)
+        config = tf.ConfigProto()
+        config.allow_soft_placement = True
+        config.log_device_placement = True
 
-        with sv.managed_session(master=server.target, config=config) as sess:
-            while 1:
+        is_chief = (args.job_name == 'ps')
+        hooks = [tf.train.StopAtStepHook(last_step=180000),
+                 tf.train.CheckpointSaverHook(hp.logdir,
+                                              save_steps=1000,
+                                              saver=tf.train.Saver(max_to_keep=1))]
+
+        with tf.train.MonitoredTrainingSession(is_chief=is_chief,
+                                               master=server.target,
+                                               hooks=hooks) as sess:
+            while not sess.should_stop():
                 for _ in tqdm(range(g.num_batch), total=g.num_batch, ncols=70, leave=False, unit='b'):
                     _, gs = sess.run([g.training_op, g.global_step])
 
                     if gs % 1000 == 0:
-                        sv.saver.save(sess, hp.logdir + '/model_gs_{}k'.format(gs // 1000))
-
                         al = sess.run(g.alignments)
                         plot_alignment(al[0], gs)
+
+        print('Training Stop')

@@ -1,3 +1,6 @@
+import tensorflow as tf
+
+
 class Hyperparams:
     # signal processing.
     vocab_size = 400000
@@ -27,3 +30,13 @@ class Hyperparams:
     logdir = "logdir/01"
     sampledir = 'samples'
     batch_size = 32
+
+    cluster_spec = tf.train.ClusterSpec({
+        'ps': [
+            '192.168.1.12:2221'  # /job:ps/task:0
+        ],
+        'worker': [
+            '192.168.1.10:2222',  # /job:worker/task:0
+            '172.17.0.1:2222'  # /job:worker/task:1
+        ]
+    })
