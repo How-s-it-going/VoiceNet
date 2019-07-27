@@ -103,7 +103,7 @@ def gru(inputs, num_units=None, bidirection=False, scope="gru", reuse=None):
         if num_units is None:
             num_units = inputs.get_shape().as_list[-1]
 
-        cell = DeviceCellWrapper('/task:1/gpu:0', tf.contrib.rnn.GRUCell(num_units))
+        cell = tf.contrib.rnn.GRUCell(num_units)
         if bidirection:
             cell_bw = tf.contrib.rnn.GRUCell(num_units)
             outputs, _ = tf.nn.bidirectional_dynamic_rnn(cell, cell_bw, inputs, dtype=tf.float32)
@@ -120,7 +120,7 @@ def attention_decoder(inputs, memory, num_units=None, scope="attention_decoder",
 
         attention_mechanism = tf.contrib.seq2seq.BahdanauAttention(num_units,
                                                                    memory)
-        decoder_cell = DeviceCellWrapper('/task:1/gpu:0', tf.contrib.rnn.GRUCell(num_units))
+        decoder_cell = tf.contrib.rnn.GRUCell(num_units)
         cell_with_attention = tf.contrib.seq2seq.AttentionWrapper(decoder_cell,
                                                                   attention_mechanism,
                                                                   num_units,
