@@ -239,11 +239,11 @@ if __name__ == '__main__':
 
     cluster_spec = tf.train.ClusterSpec({
         'ps': [
-            'kodamanbou-no-iMac.local:2221'  # /job:ps/task:0
+            '192.168.1.12:2221'  # /job:ps/task:0
         ],
         'worker': [
-            'kodamahiderous-iMac.local:2222',  # /job:worker/task:0
-            'kodamanbou-ubuntu.local:2222'  # /job:worker/task:1
+            '192.168.1.10:2222',  # /job:worker/task:0
+            '172.17.0.1:2222'  # /job:worker/task:1
         ]
     })
 
