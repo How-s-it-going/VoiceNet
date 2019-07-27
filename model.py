@@ -243,7 +243,7 @@ if __name__ == '__main__':
         config.allow_soft_placement = True
         config.log_device_placement = True
 
-        is_chief = (args.job_name == 'ps')
+        is_chief = (args.task_index == 0)
         hooks = [tf.train.StopAtStepHook(last_step=180000),
                  tf.train.CheckpointSaverHook(hp.logdir,
                                               save_steps=1000,
