@@ -7,6 +7,7 @@ import copy
 from scipy import signal
 from tqdm import tqdm
 import matplotlib.pyplot as plt
+import argparse
 from hyperparams import Hyperparams as hp
 from network import encoder, decoder1, decoder2, embed
 
@@ -130,7 +131,7 @@ def learning_rate_decay(init_lr, global_step, warmup_steps=4000.):
 
 
 def get_batch():
-    with tf.device('/cpu:0'):
+    with tf.device('/job:worker/task:0/cpu:0'):
         fpaths, text_lengths, encoder = make_corpus('datasets/sentences.dat')
 
         num_batch = len(fpaths) // hp.batch_size
@@ -162,48 +163,46 @@ def get_batch():
 
 class Graph:
     def __init__(self, mode='train'):
-        is_training = True if mode == 'train' else False
+        with tf.device(tf.train.replica_device_setter(cluster=cluster_spec)):
+            is_training = True if mode == 'train' else False
 
-        if mode == 'train':
-            self.x, self.y, self.z, self.fnames, self.num_batch = get_batch()
-        elif mode == 'eval':
-            self.x = tf.placeholder(tf.int32, shape=(None, None))
-            self.y = tf.placeholder(tf.float32, shape=(None, None, hp.n_mels * hp.r))
-            self.z = tf.placeholder(tf.float32, shape=(None, None, 1 + hp.n_fft // 2))
-            self.fnames = tf.placeholder(tf.string, shape=(None,))
-        else:
-            # synthesize.
-            self.x = tf.placeholder(tf.int32, shape=(None, None))
-            self.y = tf.placeholder(tf.float32, shape=(None, None, hp.n_mels * hp.r))
+            if mode == 'train':
+                self.x, self.y, self.z, self.fnames, self.num_batch = get_batch()
+            elif mode == 'eval':
+                self.x = tf.placeholder(tf.int32, shape=(None, None))
+                self.y = tf.placeholder(tf.float32, shape=(None, None, hp.n_mels * hp.r))
+                self.z = tf.placeholder(tf.float32, shape=(None, None, 1 + hp.n_fft // 2))
+                self.fnames = tf.placeholder(tf.string, shape=(None,))
+            else:
+                # synthesize.
+                self.x = tf.placeholder(tf.int32, shape=(None, None))
+                self.y = tf.placeholder(tf.float32, shape=(None, None, hp.n_mels * hp.r))
 
-        self.encoder_inputs = embed(self.x, hp.vocab_size, hp.embed_size)
-        self.decoder_inputs = tf.concat((tf.zeros_like(self.y[:, :1, :]), self.y[:, :-1, :]), 1)
-        self.decoder_inputs = self.decoder_inputs[:, :, -hp.n_mels:]
+            self.encoder_inputs = embed(self.x, hp.vocab_size, hp.embed_size)
+            self.decoder_inputs = tf.concat((tf.zeros_like(self.y[:, :1, :]), self.y[:, :-1, :]), 1)
+            self.decoder_inputs = self.decoder_inputs[:, :, -hp.n_mels:]
 
-        # Network.
-        with tf.variable_scope("net"):
-            self.memory = encoder(self.encoder_inputs, is_training=is_training)
-            self.y_hat, self.alignments = decoder1(self.decoder_inputs,
-                                                   self.memory,
-                                                   is_training=is_training)
-            self.z_hat = decoder2(self.y_hat, is_training=is_training)
+            # Network.
+            with tf.variable_scope("net"):
+                self.memory = encoder(self.encoder_inputs, is_training=is_training)
+                self.y_hat, self.alignments = decoder1(self.decoder_inputs,
+                                                       self.memory,
+                                                       is_training=is_training)
+                self.z_hat = decoder2(self.y_hat, is_training=is_training)
 
-        self.audio = tf.py_func(spectrogram2wav, [self.z_hat[0]], tf.float32)
+            self.audio = tf.py_func(spectrogram2wav, [self.z_hat[0]], tf.float32)
 
-        if mode in ('train', 'eval'):
-            with tf.device('/gpu:0'):
+            if mode in ('train', 'eval'):
                 # Loss.
                 self.loss1 = tf.reduce_mean(tf.abs(self.y_hat - self.y))
                 self.loss2 = tf.reduce_mean(tf.abs(self.z_hat - self.z))
                 self.loss = self.loss1 + self.loss2
 
-            with tf.device('/cpu:0'):
                 self.global_step = tf.Variable(0, name='global_step', trainable=False)
                 self.lr = learning_rate_decay(hp.lr, global_step=self.global_step)
 
-            self.optimizer = tf.train.AdamOptimizer(learning_rate=self.lr)
+                self.optimizer = tf.train.AdamOptimizer(learning_rate=self.lr)
 
-            with tf.device('/gpu:0'):
                 self.gvs = self.optimizer.compute_gradients(self.loss)
                 self.clipped = []
                 for grad, var in self.gvs:
@@ -212,34 +211,57 @@ class Graph:
 
                 self.training_op = self.optimizer.apply_gradients(self.clipped, global_step=self.global_step)
 
-            tf.summary.scalar('{}/loss1'.format(mode), self.loss1)
-            tf.summary.scalar('{}/loss'.format(mode), self.loss)
-            tf.summary.scalar('{}/lr'.format(mode), self.lr)
+                tf.summary.scalar('{}/loss1'.format(mode), self.loss1)
+                tf.summary.scalar('{}/loss'.format(mode), self.loss)
+                tf.summary.scalar('{}/lr'.format(mode), self.lr)
 
-            tf.summary.image('{}/mel_gt'.format(mode), tf.expand_dims(self.y, -1), max_outputs=1)
-            tf.summary.image('{}/mel_hat'.format(mode), tf.expand_dims(self.y_hat, -1), max_outputs=1)
-            tf.summary.image('{}/mag_gt'.format(mode), tf.expand_dims(self.z, -1), max_outputs=1)
-            tf.summary.image('{}/mag_hat'.format(mode), tf.expand_dims(self.z_hat, -1), max_outputs=1)
+                tf.summary.image('{}/mel_gt'.format(mode), tf.expand_dims(self.y, -1), max_outputs=1)
+                tf.summary.image('{}/mel_hat'.format(mode), tf.expand_dims(self.y_hat, -1), max_outputs=1)
+                tf.summary.image('{}/mag_gt'.format(mode), tf.expand_dims(self.z, -1), max_outputs=1)
+                tf.summary.image('{}/mag_hat'.format(mode), tf.expand_dims(self.z_hat, -1), max_outputs=1)
 
-            tf.summary.audio('{}/sample'.format(mode), tf.expand_dims(self.audio, 0), hp.sr)
-            self.merged = tf.summary.merge_all()
+                tf.summary.audio('{}/sample'.format(mode), tf.expand_dims(self.audio, 0), hp.sr)
+                self.merged = tf.summary.merge_all()
 
 
 if __name__ == '__main__':
     print('Training start.')
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--job_name', dest='job_name', type=str,
+                        choices=['ps', 'worker'])
+    parser.add_argument('--task_index', dest='task_index', type=int,
+                        default=0)
+    args = parser.parse_args()
+
     config = tf.ConfigProto()
     config.allow_soft_placement = True
     config.log_device_placement = True
-    g = Graph()
-    sv = tf.train.Supervisor(logdir=hp.logdir, save_summaries_secs=60, save_model_secs=0)
 
-    with sv.managed_session(config=config) as sess:
-        while 1:
-            for _ in tqdm(range(g.num_batch), total=g.num_batch, ncols=70, leave=False, unit='b'):
-                _, gs = sess.run([g.training_op, g.global_step])
+    cluster_spec = tf.train.ClusterSpec({
+        'ps': [
+            'kodamanbou-no-iMac.local:2221'  # /job:ps/task:0
+        ],
+        'worker': [
+            'kodamahiderous-iMac.local:2222',  # /job:worker/task:0
+            'kodamanbou-ubuntu.local:2222'  # /job:worker/task:1
+        ]
+    })
 
-                if gs % 1000 == 0:
-                    sv.saver.save(sess, hp.logdir + '/model_gs_{}k'.format(gs // 1000))
+    server = tf.train.Server(cluster_spec, job_name=args.job_name, task_index=args.task_index)
 
-                    al = sess.run(g.alignments)
-                    plot_alignment(al[0], gs)
+    if args.job_name == 'ps':
+        server.join()
+    else:
+        g = Graph()
+        sv = tf.train.Supervisor(logdir=hp.logdir, save_summaries_secs=60, save_model_secs=0)
+
+        with sv.managed_session(master=server.target, config=config) as sess:
+            while 1:
+                for _ in tqdm(range(g.num_batch), total=g.num_batch, ncols=70, leave=False, unit='b'):
+                    _, gs = sess.run([g.training_op, g.global_step])
+
+                    if gs % 1000 == 0:
+                        sv.saver.save(sess, hp.logdir + '/model_gs_{}k'.format(gs // 1000))
+
+                        al = sess.run(g.alignments)
+                        plot_alignment(al[0], gs)
