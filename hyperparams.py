@@ -36,7 +36,7 @@ class Hyperparams:
             '192.168.1.12:2221'  # /job:ps/task:0
         ],
         'worker': [
-            '172.17.0.2:2222',  # /job:worker/task:0
+            '172.17.0.2:2222',  # /job:worker/task:0 (Docker Image)
             '192.168.1.10:2222'  # /job:worker/task:1
         ]
     })
