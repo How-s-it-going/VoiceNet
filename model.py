@@ -251,7 +251,8 @@ if __name__ == '__main__':
 
         with tf.train.MonitoredTrainingSession(is_chief=is_chief,
                                                master=server.target,
-                                               hooks=hooks) as sess:
+                                               hooks=hooks,
+                                               config=config) as sess:
             while not sess.should_stop():
                 for _ in tqdm(range(g.num_batch), total=g.num_batch, ncols=70, leave=False, unit='b'):
                     _, gs = sess.run([g.training_op, g.global_step])
