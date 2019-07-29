@@ -131,7 +131,7 @@ def learning_rate_decay(init_lr, global_step, warmup_steps=4000.):
 
 
 def get_batch():
-    with tf.device('/cpu:0'):
+    with tf.device('/task:1/cpu:0'):
         fpaths, text_lengths, encoder = make_corpus('datasets/sentences.dat')
 
         num_batch = len(fpaths) // hp.batch_size
