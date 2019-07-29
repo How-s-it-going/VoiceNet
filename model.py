@@ -131,32 +131,31 @@ def learning_rate_decay(init_lr, global_step, warmup_steps=4000.):
 
 
 def get_batch():
-    with tf.device('/job:ps/task:1/cpu:0'):
-        fpaths, text_lengths, encoder = make_corpus('datasets/sentences.dat')
+    fpaths, text_lengths, encoder = make_corpus('datasets/sentences.dat')
 
-        num_batch = len(fpaths) // hp.batch_size
-        fpaths = tf.convert_to_tensor(fpaths)
-        text_lengths = tf.convert_to_tensor(text_lengths)
-        dataset = tf.convert_to_tensor(encoder.dataset)
+    num_batch = len(fpaths) // hp.batch_size
+    fpaths = tf.convert_to_tensor(fpaths)
+    text_lengths = tf.convert_to_tensor(text_lengths)
+    dataset = tf.convert_to_tensor(encoder.dataset)
 
-        fpath, text_length, text = tf.train.slice_input_producer([fpaths, text_lengths, dataset], shuffle=True)
+    fpath, text_length, text = tf.train.slice_input_producer([fpaths, text_lengths, dataset], shuffle=True)
 
-        fname, mel, mag = tf.py_func(load_spectrograms, [fpath], [tf.string, tf.float32, tf.float32])
+    fname, mel, mag = tf.py_func(load_spectrograms, [fpath], [tf.string, tf.float32, tf.float32])
 
-        fname.set_shape(())
-        text.set_shape((None,))
-        mel.set_shape((None, hp.n_mels * hp.r))
-        mag.set_shape((None, hp.n_fft // 2 + 1))
+    fname.set_shape(())
+    text.set_shape((None,))
+    mel.set_shape((None, hp.n_mels * hp.r))
+    mag.set_shape((None, hp.n_fft // 2 + 1))
 
-        _, (texts, mels, mags, fnames) = tf.contrib.training.bucket_by_sequence_length(
-            input_length=text_length,
-            tensors=[text, mel, mag, fname],
-            batch_size=hp.batch_size,
-            bucket_boundaries=[8 * (i + 1) for i in range(8)],
-            num_threads=16,
-            capacity=hp.batch_size * 4,
-            dynamic_pad=True
-        )
+    _, (texts, mels, mags, fnames) = tf.contrib.training.bucket_by_sequence_length(
+        input_length=text_length,
+        tensors=[text, mel, mag, fname],
+        batch_size=hp.batch_size,
+        bucket_boundaries=[8 * (i + 1) for i in range(8)],
+        num_threads=16,
+        capacity=hp.batch_size * 4,
+        dynamic_pad=True
+    )
 
     return texts, mels, mags, fnames, num_batch
 
