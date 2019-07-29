@@ -33,10 +33,10 @@ class Hyperparams:
 
     cluster_spec = tf.train.ClusterSpec({
         'ps': [
-            '192.168.1.12:2221',  # /job:ps/task:0
-            '192.168.1.10:2221'  # /job:ps/task:1
+            '192.168.1.12:2221'  # /job:ps/task:0
         ],
         'worker': [
-            '192.168.1.6:2222'  # /job:worker/task:0 (Docker Image)
+            '192.168.1.6:2222',  # /job:worker/task:0 (Docker Image)
+            '192.168.1.10:2221'  # /job:worker/task:1
         ]
     })
